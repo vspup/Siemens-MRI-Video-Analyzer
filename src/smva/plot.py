@@ -48,7 +48,8 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
     # Current: -10A to 600A
     # Voltages: -10V to 12V
     filtered_data = []
-    for item in video_data:
+    filtered_indices = []
+    for idx, item in enumerate(video_data):
         current_a = item["current_A"]
         mps_v = item["mps_V"]
         mag_v = item["mag_V"]
@@ -62,6 +63,7 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
             continue
         
         filtered_data.append(item)
+        filtered_indices.append(idx)
     
     if not filtered_data:
         raise ValueError("No valid data points after filtering")
@@ -78,6 +80,7 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
     current_a = np.array([item["current_A"] for item in filtered_data])
     mps_v = np.array([item["mps_V"] for item in filtered_data])
     mag_v = np.array([item["mag_V"] for item in filtered_data])
+    filtered_indices = np.array(filtered_indices)
     
     # Additional filtering: remove spikes and outliers
     if len(current_a) > 2:
@@ -166,6 +169,7 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
         current_a = current_a[valid_mask]
         mps_v = mps_v[valid_mask]
         mag_v = mag_v[valid_mask]
+        filtered_indices = filtered_indices[valid_mask]
         
         rate_filtered_count = np.sum(~valid_mask)
         if rate_filtered_count > 0:
@@ -201,6 +205,10 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
     # Prepare cleaned data for saving
     cleaned_data = []
     for i in range(len(time_sec)):
+        # Get original data point
+        original_idx = int(filtered_indices[i])
+        original_item = video_data[original_idx]
+        
         # Calculate time string from seconds
         total_seconds = int(time_sec[i])
         hours = total_seconds // 3600
@@ -208,13 +216,24 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
         seconds = total_seconds % 60
         time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        cleaned_data.append({
+        # Build cleaned item with all original fields plus filtered values
+        cleaned_item = {
             "time_sec": time_sec[i],
             "current_A": current_a[i],
             "mps_V": mps_v[i],
             "mag_V": mag_v[i],
             "time": time_str
-        })
+        }
+        
+        # Add optional fields if they exist in original data
+        if "time_sec_precise" in original_item:
+            cleaned_item["time_sec_precise"] = original_item["time_sec_precise"]
+        if "frame" in original_item:
+            cleaned_item["frame"] = original_item["frame"]
+        if "time_ms" in original_item:
+            cleaned_item["time_ms"] = original_item["time_ms"]
+        
+        cleaned_data.append(cleaned_item)
 
     # Create figure and axes
     fig, ax1 = plt.subplots(figsize=(14, 8))

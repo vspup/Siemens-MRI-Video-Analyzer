@@ -6,6 +6,7 @@ from smva.setup_roi import run_setup_roi
 from smva.test_ocr import run_test_ocr
 from smva.extract import run_extract
 from smva.plot import run_plot
+from smva.analyze import run_analyze
 
 
 @click.group()
@@ -36,6 +37,12 @@ def extract():
 def plot():
     """Plot: Create graphs from extracted data."""
     run_plot()
+
+
+@main.command(name="analyze")
+def analyze():
+    """Analyze: Interactive analysis of cleaned data with dynamic axis limits."""
+    run_analyze()
 
 
 if __name__ == "__main__":
