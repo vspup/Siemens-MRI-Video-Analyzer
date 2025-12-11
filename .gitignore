@@ -5,6 +5,7 @@ __pycache__/
 .Python
 raw_video/*.mp4
 config/roi.yaml
+result/
 result/frames_preview/
 result/test_frames/
 result/output.json
