@@ -37,7 +37,7 @@ def load_roi_config(config_path: Path) -> Dict[str, Any]:
         config_path: Path to config file
 
     Returns:
-        Configuration dictionary with roi and video keys
+        Configuration dictionary with roi, video, and validation keys
     """
     if not config_path.exists():
         raise FileNotFoundError(f"ROI config not found: {config_path}")
@@ -47,6 +47,16 @@ def load_roi_config(config_path: Path) -> Dict[str, Any]:
 
     if "roi" not in config or "video" not in config:
         raise ValueError("Invalid ROI config format")
+
+    # Add default validation settings if not present
+    if "validation" not in config:
+        config["validation"] = {
+            "current_min": -10,
+            "current_max": 600,
+            "voltage_min": -10,
+            "voltage_max": 15,
+            "time_tolerance_sec": 0.5,
+        }
 
     return config
 
