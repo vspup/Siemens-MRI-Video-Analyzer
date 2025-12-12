@@ -76,7 +76,11 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
         print(f"Filtered out {skipped_count} invalid data points ({filtered_count}/{original_count} valid)")
     
     # Extract filtered data
-    time_sec = np.array([item["time_sec"] for item in filtered_data])
+    # Use time_sec_precise if available, otherwise fall back to time_sec
+    time_sec = np.array([
+        item.get("time_sec_precise", item["time_sec"]) 
+        for item in filtered_data
+    ])
     current_a = np.array([item["current_A"] for item in filtered_data])
     mps_v = np.array([item["mps_V"] for item in filtered_data])
     mag_v = np.array([item["mag_V"] for item in filtered_data])
@@ -114,8 +118,9 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
         mps_diff = np.abs(np.diff(mps_v)) / dt
         mag_diff = np.abs(np.diff(mag_v)) / dt
         
-        max_current_rate = 50.0  # A/s
-        max_voltage_rate = 5.0   # V/s
+        # Increased thresholds to preserve real rapid changes in MRI ramp data
+        max_current_rate = 500.0  # A/s (increased from 50.0 to preserve rapid ramps)
+        max_voltage_rate = 50.0   # V/s (increased from 5.0 to preserve rapid changes)
         
         for i in range(len(current_diff)):
             if current_diff[i] > max_current_rate or \
@@ -143,22 +148,23 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
             next_mag = mag_v[i + 1]
             
             # Calculate if current point is isolated (differs from both neighbors)
+            # Increased thresholds to preserve real rapid transitions in MRI ramp data
             current_is_isolated = (
-                abs(curr_current - prev_current) > 100 and
-                abs(curr_current - next_current) > 100 and
-                abs(prev_current - next_current) < 50  # Neighbors are similar
+                abs(curr_current - prev_current) > 200 and
+                abs(curr_current - next_current) > 200 and
+                abs(prev_current - next_current) < 100  # Neighbors are similar
             )
             
             mps_is_isolated = (
-                abs(curr_mps - prev_mps) > 2.0 and
-                abs(curr_mps - next_mps) > 2.0 and
-                abs(prev_mps - next_mps) < 1.0  # Neighbors are similar
+                abs(curr_mps - prev_mps) > 5.0 and
+                abs(curr_mps - next_mps) > 5.0 and
+                abs(prev_mps - next_mps) < 2.0  # Neighbors are similar
             )
             
             mag_is_isolated = (
-                abs(curr_mag - prev_mag) > 2.0 and
-                abs(curr_mag - next_mag) > 2.0 and
-                abs(prev_mag - next_mag) < 1.0  # Neighbors are similar
+                abs(curr_mag - prev_mag) > 5.0 and
+                abs(curr_mag - next_mag) > 5.0 and
+                abs(prev_mag - next_mag) < 2.0  # Neighbors are similar
             )
             
             if current_is_isolated or mps_is_isolated or mag_is_isolated:
@@ -176,25 +182,27 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
             print(f"Filtered out {rate_filtered_count} spike/outlier points")
     
     # Apply median filter to smooth remaining data
+    # DISABLED: Median filter was smoothing out real rapid transitions
     # Window size of 3 for light smoothing
-    def median_filter(data: np.ndarray, window_size: int = 3) -> np.ndarray:
-        """Simple median filter implementation."""
-        if len(data) < window_size:
-            return data
-        filtered = np.zeros_like(data)
-        half = window_size // 2
-        for i in range(len(data)):
-            start = max(0, i - half)
-            end = min(len(data), i + half + 1)
-            filtered[i] = np.median(data[start:end])
-        return filtered
+    # def median_filter(data: np.ndarray, window_size: int = 3) -> np.ndarray:
+    #     """Simple median filter implementation."""
+    #     if len(data) < window_size:
+    #         return data
+    #     filtered = np.zeros_like(data)
+    #     half = window_size // 2
+    #     for i in range(len(data)):
+    #         start = max(0, i - half)
+    #         end = min(len(data), i + half + 1)
+    #         filtered[i] = np.median(data[start:end])
+    #     return filtered
     
-    if len(current_a) > 3:
-        window_size = 3
-        current_a = median_filter(current_a, window_size=window_size)
-        mps_v = median_filter(mps_v, window_size=window_size)
-        mag_v = median_filter(mag_v, window_size=window_size)
-        print(f"Applied median filter (window size: {window_size})")
+    # Median filter disabled to preserve rapid transitions in MRI ramp data
+    # if len(current_a) > 3:
+    #     window_size = 3
+    #     current_a = median_filter(current_a, window_size=window_size)
+    #     mps_v = median_filter(mps_v, window_size=window_size)
+    #     mag_v = median_filter(mag_v, window_size=window_size)
+    #     print(f"Applied median filter (window size: {window_size})")
     
     # Convert back to lists for plotting
     time_sec = time_sec.tolist()
@@ -209,7 +217,7 @@ def plot_graphs(data: Dict[str, Any], output_path: Path) -> None:
         original_idx = int(filtered_indices[i])
         original_item = video_data[original_idx]
         
-        # Calculate time string from seconds
+        # Calculate time string from seconds (use precise time)
         total_seconds = int(time_sec[i])
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60

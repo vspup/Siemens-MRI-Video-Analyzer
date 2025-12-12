@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.widgets import RangeSlider, Button, TextBox
+from matplotlib.widgets import Button, TextBox
 import numpy as np
 
 
@@ -44,7 +44,11 @@ def plot_interactive(data: Dict[str, Any]) -> None:
         raise ValueError("No data to plot")
 
     # Extract data
-    time_sec = np.array([item["time_sec"] for item in video_data])
+    # Use time_sec_precise if available, otherwise fall back to time_sec
+    time_sec = np.array([
+        item.get("time_sec_precise", item["time_sec"]) 
+        for item in video_data
+    ])
     current_a = np.array([item["current_A"] for item in video_data])
     mps_v = np.array([item["mps_V"] for item in video_data])
     mag_v = np.array([item["mag_V"] for item in video_data])
@@ -84,12 +88,12 @@ def plot_interactive(data: Dict[str, Any]) -> None:
     voltage_min -= voltage_padding
     voltage_max += voltage_padding
 
-    # Create figure with space for sliders
+    # Create figure with space for text input fields
     fig = plt.figure(figsize=(16, 10))
     
-    # Main plot area (centered with space for sliders on all sides)
+    # Main plot area (more space since no sliders)
     # [left, bottom, width, height]
-    ax_plot = plt.axes([0.15, 0.15, 0.65, 0.7])
+    ax_plot = plt.axes([0.12, 0.12, 0.75, 0.75])
     
     # Create twin axis for voltages
     ax_voltage = ax_plot.twinx()
@@ -102,23 +106,23 @@ def plot_interactive(data: Dict[str, Any]) -> None:
     ax_plot.set_xlabel("Time (seconds)", fontsize=12)
     ax_plot.set_ylabel("Current (A)", color=color_current, fontsize=12)
     line1, = ax_plot.plot(
-        time_sec_display, current_a_display, color=color_current, linewidth=1.2,
-        marker='o', markersize=2, markerfacecolor=color_current, 
-        markeredgewidth=0, alpha=0.8, antialiased=True
+        time_sec_display, current_a_display, color=color_current, linewidth=1.5,
+        marker='o', markersize=4, markerfacecolor=color_current, 
+        markeredgecolor='darkred', markeredgewidth=0.5, alpha=0.9, antialiased=True
     )
     ax_plot.tick_params(axis="y", labelcolor=color_current)
     ax_plot.grid(True, alpha=0.3)
 
     ax_voltage.set_ylabel("Voltage (V)", fontsize=12)
     line2, = ax_voltage.plot(
-        time_sec_display, mps_v_display, color=color_mps, linewidth=1.2,
-        marker='s', markersize=2, markerfacecolor=color_mps, 
-        markeredgewidth=0, alpha=0.8, antialiased=True
+        time_sec_display, mps_v_display, color=color_mps, linewidth=1.5,
+        marker='s', markersize=4, markerfacecolor=color_mps, 
+        markeredgecolor='darkcyan', markeredgewidth=0.5, alpha=0.9, antialiased=True
     )
     line3, = ax_voltage.plot(
-        time_sec_display, mag_v_display, color=color_mag, linewidth=1.2,
-        marker='^', markersize=2, markerfacecolor=color_mag, 
-        markeredgewidth=0, alpha=0.8, antialiased=True
+        time_sec_display, mag_v_display, color=color_mag, linewidth=1.5,
+        marker='^', markersize=4, markerfacecolor=color_mag, 
+        markeredgecolor='darkmagenta', markeredgewidth=0.5, alpha=0.9, antialiased=True
     )
 
     # Title
@@ -130,195 +134,179 @@ def plot_interactive(data: Dict[str, Any]) -> None:
     ax_plot.set_ylim(current_min, current_max)
     ax_voltage.set_ylim(voltage_min, voltage_max)
 
-    # Create range sliders for axis limits positioned near their respective axes
+    # Create text input fields for axis limits (no sliders for better performance)
+    textbox_width = 0.08
+    textbox_height = 0.035
     
-    # === TIME AXIS RANGE SLIDER (below X-axis) ===
-    slider_width_horizontal = 0.65
-    slider_height_horizontal = 0.03
-    slider_left_horizontal = 0.15
-    textbox_width = 0.06
-    textbox_height = 0.025
+    # Store current limits for reset
+    initial_limits = {
+        'time_min': time_min,
+        'time_max': time_max,
+        'current_min': current_min,
+        'current_max': current_max,
+        'voltage_min': voltage_min,
+        'voltage_max': voltage_max
+    }
     
-    # Time slider
-    ax_time_range = plt.axes([slider_left_horizontal, 0.06, slider_width_horizontal, slider_height_horizontal])
+    # === TIME AXIS TEXTBOXES (below X-axis, at bottom) ===
+    ax_time_min_text = plt.axes([0.12, 0.02, textbox_width, textbox_height])
+    ax_time_max_text = plt.axes([0.79 - textbox_width, 0.02, textbox_width, textbox_height])
     
-    slider_time = RangeSlider(
-        ax_time_range, 'Time (s)', 
-        time_sec.min() - time_padding * 2, 
-        time_sec.max() + time_padding * 2,
-        valinit=(time_min, time_max),
-        valstep=(time_max - time_min) / 100,
-        color='steelblue'
-    )
+    textbox_time_min = TextBox(ax_time_min_text, 'Time min (s)', initial=f"{time_min:.1f}", textalignment='center')
+    textbox_time_max = TextBox(ax_time_max_text, 'Time max (s)', initial=f"{time_max:.1f}", textalignment='center')
     
-    # Time textboxes (min and max)
-    ax_time_min_text = plt.axes([slider_left_horizontal, 0.02, textbox_width, textbox_height])
-    ax_time_max_text = plt.axes([slider_left_horizontal + slider_width_horizontal - textbox_width, 0.02, textbox_width, textbox_height])
+    # === CURRENT AXIS TEXTBOXES (left side: min at bottom, max at top) ===
+    ax_current_min_text = plt.axes([0.02, 0.12, textbox_width, textbox_height])
+    ax_current_max_text = plt.axes([0.02, 0.87, textbox_width, textbox_height])
     
-    textbox_time_min = TextBox(ax_time_min_text, '', initial=f"{time_min:.1f}", textalignment='center')
-    textbox_time_max = TextBox(ax_time_max_text, '', initial=f"{time_max:.1f}", textalignment='center')
+    textbox_current_min = TextBox(ax_current_min_text, 'Current min (A)', initial=f"{current_min:.1f}", textalignment='center')
+    textbox_current_max = TextBox(ax_current_max_text, 'Current max (A)', initial=f"{current_max:.1f}", textalignment='center')
+    
+    # === VOLTAGE AXIS TEXTBOXES (right side: min at bottom, max at top) ===
+    ax_voltage_min_text = plt.axes([0.90, 0.12, textbox_width, textbox_height])
+    ax_voltage_max_text = plt.axes([0.90, 0.87, textbox_width, textbox_height])
+    
+    textbox_voltage_min = TextBox(ax_voltage_min_text, 'Voltage min (V)', initial=f"{voltage_min:.2f}", textalignment='center')
+    textbox_voltage_max = TextBox(ax_voltage_max_text, 'Voltage max (V)', initial=f"{voltage_max:.2f}", textalignment='center')
+    
+    # Function to handle textbox clicks - move cursor to end for easier editing
+    def on_textbox_click(event):
+        """Handle textbox clicks - move cursor to end for easier text selection/editing."""
+        if hasattr(event, 'inaxes') and event.inaxes:
+            # Find which textbox was clicked
+            for textbox in [textbox_time_min, textbox_time_max, 
+                          textbox_current_min, textbox_current_max,
+                          textbox_voltage_min, textbox_voltage_max]:
+                if event.inaxes == textbox.ax:
+                    # Get current text and move cursor to end
+                    # This makes it easier to select all text manually (Ctrl+A or triple-click)
+                    # or to append/overwrite the value
+                    current_text = textbox.text_disp.get_text()
+                    textbox.cursor_index = len(current_text)
+                    textbox._rendercursor()
+                    break
+    
+    # Connect click event for textbox interaction
+    fig.canvas.mpl_connect('button_press_event', on_textbox_click)
 
-    # === CURRENT AXIS RANGE SLIDER (left side, vertical) ===
-    slider_width_vertical = 0.025
-    slider_height_vertical = 0.3
-    slider_bottom_left = 0.15
-    textbox_width_vert = 0.045
-    textbox_height_vert = 0.03
-    
-    # Current slider
-    ax_current_range = plt.axes([0.04, slider_bottom_left, slider_width_vertical, slider_height_vertical])
-    
-    slider_current = RangeSlider(
-        ax_current_range, 'Current\n(A)',
-        current_a.min() - current_padding * 2, 
-        current_a.max() + current_padding * 2,
-        valinit=(current_min, current_max),
-        valstep=(current_max - current_min) / 100,
-        orientation='vertical',
-        color=color_current
-    )
-    
-    # Current textboxes (min at bottom, max at top)
-    ax_current_min_text = plt.axes([0.015, slider_bottom_left - 0.04, textbox_width_vert, textbox_height_vert])
-    ax_current_max_text = plt.axes([0.015, slider_bottom_left + slider_height_vertical + 0.01, textbox_width_vert, textbox_height_vert])
-    
-    textbox_current_min = TextBox(ax_current_min_text, '', initial=f"{current_min:.1f}", textalignment='center')
-    textbox_current_max = TextBox(ax_current_max_text, '', initial=f"{current_max:.1f}", textalignment='center')
-
-    # === VOLTAGE AXIS RANGE SLIDER (right side, vertical) ===
-    slider_left_right = 0.83
-    
-    # Voltage slider
-    ax_voltage_range = plt.axes([slider_left_right, slider_bottom_left, slider_width_vertical, slider_height_vertical])
-    
-    voltage_range = voltage_max - voltage_min
-    slider_voltage = RangeSlider(
-        ax_voltage_range, 'Voltage\n(V)',
-        min(mps_v.min(), mag_v.min()) - voltage_padding * 2,
-        max(mps_v.max(), mag_v.max()) + voltage_padding * 2,
-        valinit=(voltage_min, voltage_max),
-        valstep=voltage_range / 100 if voltage_range > 0 else 0.01,
-        orientation='vertical',
-        color='mediumorchid'
-    )
-    
-    # Voltage textboxes (min at bottom, max at top)
-    ax_voltage_min_text = plt.axes([slider_left_right + 0.035, slider_bottom_left - 0.04, textbox_width_vert, textbox_height_vert])
-    ax_voltage_max_text = plt.axes([slider_left_right + 0.035, slider_bottom_left + slider_height_vertical + 0.01, textbox_width_vert, textbox_height_vert])
-    
-    textbox_voltage_min = TextBox(ax_voltage_min_text, '', initial=f"{voltage_min:.2f}", textalignment='center')
-    textbox_voltage_max = TextBox(ax_voltage_max_text, '', initial=f"{voltage_max:.2f}", textalignment='center')
-
-    # Reset button (bottom left corner)
-    ax_reset = plt.axes([0.02, 0.90, 0.08, 0.04])
+    # Reset button (top left corner)
+    ax_reset = plt.axes([0.02, 0.92, 0.08, 0.04])
     btn_reset = Button(ax_reset, 'Reset', color='lightgray', hovercolor='gray')
 
-    # Flag to prevent recursive updates of textboxes
-    updating_textboxes = {'flag': False}
-    
-    # Update function for sliders
-    def update_from_slider(val):
-        time_range = slider_time.val
-        current_range = slider_current.val
-        voltage_range = slider_voltage.val
-        
-        # Update plot limits (fast operation)
-        ax_plot.set_xlim(time_range[0], time_range[1])
-        ax_plot.set_ylim(current_range[0], current_range[1])
-        ax_voltage.set_ylim(voltage_range[0], voltage_range[1])
-        
-        # Update textboxes without triggering their callbacks
-        if not updating_textboxes['flag']:
-            updating_textboxes['flag'] = True
-            textbox_time_min.set_val(f"{time_range[0]:.1f}")
-            textbox_time_max.set_val(f"{time_range[1]:.1f}")
-            textbox_current_min.set_val(f"{current_range[0]:.1f}")
-            textbox_current_max.set_val(f"{current_range[1]:.1f}")
-            textbox_voltage_min.set_val(f"{voltage_range[0]:.2f}")
-            textbox_voltage_max.set_val(f"{voltage_range[1]:.2f}")
-            updating_textboxes['flag'] = False
-        
-        # Redraw only what's needed
-        ax_plot.figure.canvas.draw_idle()
-
-    # Update functions for textboxes
+    # Update functions for textboxes (directly update plot limits)
+    # All functions preserve decimal precision when updating
     def update_time_min(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_time.val
-            if val < current_range[1]:
-                slider_time.set_val((val, current_range[1]))
+            current_max = float(textbox_time_max.text_disp.get_text())
+            if val < current_max:
+                ax_plot.set_xlim(val, current_max)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_time_min.set_val(f"{val:.1f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_time_min.set_val(f"{ax_plot.get_xlim()[0]:.1f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_time_min.set_val(f"{ax_plot.get_xlim()[0]:.1f}")
     
     def update_time_max(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_time.val
-            if val > current_range[0]:
-                slider_time.set_val((current_range[0], val))
+            current_min = float(textbox_time_min.text_disp.get_text())
+            if val > current_min:
+                ax_plot.set_xlim(current_min, val)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_time_max.set_val(f"{val:.1f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_time_max.set_val(f"{ax_plot.get_xlim()[1]:.1f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_time_max.set_val(f"{ax_plot.get_xlim()[1]:.1f}")
     
     def update_current_min(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_current.val
-            if val < current_range[1]:
-                slider_current.set_val((val, current_range[1]))
+            current_max = float(textbox_current_max.text_disp.get_text())
+            if val < current_max:
+                ax_plot.set_ylim(val, current_max)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_current_min.set_val(f"{val:.1f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_current_min.set_val(f"{ax_plot.get_ylim()[0]:.1f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_current_min.set_val(f"{ax_plot.get_ylim()[0]:.1f}")
     
     def update_current_max(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_current.val
-            if val > current_range[0]:
-                slider_current.set_val((current_range[0], val))
+            current_min = float(textbox_current_min.text_disp.get_text())
+            if val > current_min:
+                ax_plot.set_ylim(current_min, val)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_current_max.set_val(f"{val:.1f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_current_max.set_val(f"{ax_plot.get_ylim()[1]:.1f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_current_max.set_val(f"{ax_plot.get_ylim()[1]:.1f}")
     
     def update_voltage_min(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_voltage.val
-            if val < current_range[1]:
-                slider_voltage.set_val((val, current_range[1]))
+            current_max = float(textbox_voltage_max.text_disp.get_text())
+            if val < current_max:
+                ax_voltage.set_ylim(val, current_max)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_voltage_min.set_val(f"{val:.2f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_voltage_min.set_val(f"{ax_voltage.get_ylim()[0]:.2f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_voltage_min.set_val(f"{ax_voltage.get_ylim()[0]:.2f}")
     
     def update_voltage_max(text):
-        if updating_textboxes['flag']:
-            return
         try:
             val = float(text)
-            current_range = slider_voltage.val
-            if val > current_range[0]:
-                slider_voltage.set_val((current_range[0], val))
+            current_min = float(textbox_voltage_min.text_disp.get_text())
+            if val > current_min:
+                ax_voltage.set_ylim(current_min, val)
+                # Update textbox to show formatted value (preserves decimal if entered)
+                textbox_voltage_max.set_val(f"{val:.2f}")
+                ax_plot.figure.canvas.draw_idle()
+            else:
+                # Invalid range, restore previous value
+                textbox_voltage_max.set_val(f"{ax_voltage.get_ylim()[1]:.2f}")
         except ValueError:
-            pass
+            # Invalid input, restore previous value
+            textbox_voltage_max.set_val(f"{ax_voltage.get_ylim()[1]:.2f}")
 
     # Reset function
     def reset(event):
-        slider_time.reset()
-        slider_current.reset()
-        slider_voltage.reset()
-        # Textboxes will be updated automatically by slider callbacks
-
-    # Connect sliders to update function
-    slider_time.on_changed(update_from_slider)
-    slider_current.on_changed(update_from_slider)
-    slider_voltage.on_changed(update_from_slider)
+        # Restore initial limits
+        ax_plot.set_xlim(initial_limits['time_min'], initial_limits['time_max'])
+        ax_plot.set_ylim(initial_limits['current_min'], initial_limits['current_max'])
+        ax_voltage.set_ylim(initial_limits['voltage_min'], initial_limits['voltage_max'])
+        
+        # Update textboxes
+        textbox_time_min.set_val(f"{initial_limits['time_min']:.1f}")
+        textbox_time_max.set_val(f"{initial_limits['time_max']:.1f}")
+        textbox_current_min.set_val(f"{initial_limits['current_min']:.1f}")
+        textbox_current_max.set_val(f"{initial_limits['current_max']:.1f}")
+        textbox_voltage_min.set_val(f"{initial_limits['voltage_min']:.2f}")
+        textbox_voltage_max.set_val(f"{initial_limits['voltage_max']:.2f}")
+        
+        ax_plot.figure.canvas.draw_idle()
     
     # Connect textboxes to update functions
     textbox_time_min.on_submit(update_time_min)
@@ -330,6 +318,19 @@ def plot_interactive(data: Dict[str, Any]) -> None:
     
     # Connect reset button
     btn_reset.on_clicked(reset)
+    
+    # Helper function to select all text on double-click or focus
+    def make_textbox_selectable(textbox):
+        """Make textbox select all text on focus."""
+        def on_click(event):
+            if event.inaxes == textbox.ax:
+                # Clear and let user type (matplotlib TextBox doesn't support selection well)
+                # User can double-click to select all manually
+                pass
+        return on_click
+    
+    # Note: matplotlib TextBox doesn't support text selection well
+    # Users can double-click to select all text manually
 
     # Display statistics (top of figure)
     if len(time_sec_display) < len(time_sec):
@@ -343,7 +344,7 @@ def plot_interactive(data: Dict[str, Any]) -> None:
     fig.text(0.5, 0.97, stats_text, ha='center', fontsize=9, style='italic')
     
     # Instructions
-    instructions = "Грубая настройка: перемещайте бегунки слайдеров | Точная настройка: введите значения в текстовые поля (Enter) | 'Reset' - сброс"
+    instructions = "Введите значения в текстовые поля и нажмите Enter для обновления графика | Ctrl+A или тройной клик для выделения всего текста | 'Reset' - сброс к начальным значениям"
     fig.text(0.5, 0.01, instructions, ha='center', fontsize=8, style='italic', color='gray')
 
     plt.show()
@@ -367,7 +368,8 @@ def run_analyze() -> None:
         print(f"Video: {data.get('video', 'Unknown')}")
         print(f"Data points: {len(data['data'])}")
         print(f"\nOpening interactive plot...")
-        print("Use sliders to adjust axis limits dynamically.")
+        print("Enter values in text fields and press Enter to update axis limits.")
+        print("Use Ctrl+A or triple-click to select all text in a field.")
         print("Click 'Reset' button to restore default limits.")
 
         # Create interactive plot

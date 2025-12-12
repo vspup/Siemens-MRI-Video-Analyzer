@@ -189,9 +189,11 @@ def try_parse_frame(
     validation_config: Dict[str, float],
     previous_data: Optional[Dict[str, Any]] = None,
     max_pause_threshold: Optional[float] = None,
+    try_multiple_frames: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """
     Try to parse data from a specific frame.
+    Optionally tries multiple nearby frames to avoid green square artifacts.
 
     Args:
         cap: Video capture object
@@ -201,55 +203,71 @@ def try_parse_frame(
         validation_config: Validation configuration with limits
         previous_data: Previous successfully parsed frame data for validation
         max_pause_threshold: Maximum allowed pause duration in seconds
+        try_multiple_frames: If True, try 3 frames (target, -1, +1) to avoid artifacts
 
     Returns:
         Parsed data dictionary or None if failed
     """
     x, y, w, h = roi["x"], roi["y"], roi["w"], roi["h"]
 
-    # Seek to frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-    ret, frame = cap.read()
+    # Try multiple frames to avoid green square artifacts
+    frames_to_try = [frame_num]
+    if try_multiple_frames:
+        # Try target frame, then frame before and after
+        if frame_num > 0:
+            frames_to_try.append(frame_num - 1)
+        frames_to_try.append(frame_num + 1)
+    
+    parsed_data = None
+    for try_frame in frames_to_try:
+        # Seek to frame
+        cap.set(cv2.CAP_PROP_POS_FRAMES, try_frame)
+        ret, frame = cap.read()
 
-    if not ret:
+        if not ret:
+            continue
+
+        # Crop ROI
+        roi_image = frame[y : y + h, x : x + w]
+
+        # Perform OCR
+        text = extract_text_from_roi(roi_image)
+
+        # Parse data
+        parsed_data = parse_mri_data(text)
+        
+        # If parsing succeeded, use this frame
+        if parsed_data:
+            break
+    
+    # If still no data, return None
+    if not parsed_data:
         return None
 
-    # Crop ROI
-    roi_image = frame[y : y + h, x : x + w]
+    # Validate extracted data
+    is_valid, error_msg = validate_extracted_data(
+        parsed_data, frame_num, fps, validation_config, previous_data, max_pause_threshold
+    )
 
-    # Perform OCR
-    text = extract_text_from_roi(roi_image)
+    if not is_valid:
+        # Optionally log validation failure for debugging
+        # print(f"  Validation failed for frame {frame_num}: {error_msg}")
+        return None
 
-    # Parse data
-    parsed_data = parse_mri_data(text)
+    # Calculate precise time from frame number (use original target frame, not the one that succeeded)
+    time_sec_precise, time_ms = calculate_time_from_frame(frame_num, fps)
+    time_sec = time_string_to_seconds(parsed_data["time"])
 
-    if parsed_data:
-        # Validate extracted data
-        is_valid, error_msg = validate_extracted_data(
-            parsed_data, frame_num, fps, validation_config, previous_data, max_pause_threshold
-        )
-
-        if not is_valid:
-            # Optionally log validation failure for debugging
-            # print(f"  Validation failed for frame {frame_num}: {error_msg}")
-            return None
-
-        # Calculate precise time from frame number
-        time_sec_precise, time_ms = calculate_time_from_frame(frame_num, fps)
-        time_sec = time_string_to_seconds(parsed_data["time"])
-
-        return {
-            "frame": frame_num,
-            "time_sec": time_sec,
-            "time_sec_precise": round(time_sec_precise, 3),
-            "time_ms": time_ms,
-            "current_A": parsed_data["current_A"],
-            "mps_V": parsed_data["mps_V"],
-            "mag_V": parsed_data["mag_V"],
-            "time": parsed_data["time"],
-        }
-
-    return None
+    return {
+        "frame": frame_num,
+        "time_sec": time_sec,
+        "time_sec_precise": round(time_sec_precise, 3),
+        "time_ms": time_ms,
+        "current_A": parsed_data["current_A"],
+        "mps_V": parsed_data["mps_V"],
+        "mag_V": parsed_data["mag_V"],
+        "time": parsed_data["time"],
+    }
 
 
 def process_frame_with_fallback(

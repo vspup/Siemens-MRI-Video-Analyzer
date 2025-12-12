@@ -17,6 +17,7 @@ if os.name == "nt":  # Windows
 def preprocess_image_for_ocr(image: cv2.Mat) -> cv2.Mat:
     """
     Preprocess image to improve OCR accuracy.
+    Removes green artifacts (like the running green square indicator) that can interfere with OCR.
 
     Args:
         image: Input image
@@ -24,9 +25,32 @@ def preprocess_image_for_ocr(image: cv2.Mat) -> cv2.Mat:
     Returns:
         Preprocessed image
     """
-    # Convert to grayscale
+    # If image is color, remove green artifacts first (like the running green square indicator)
     if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # Convert BGR to HSV for better color detection
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        
+        # Define green color range in HSV
+        # Green hue is around 60 degrees in OpenCV (120/2 = 60)
+        # We'll mask out bright green indicators that can interfere with OCR
+        lower_green = np.array([40, 80, 80])    # Lower bound for green (wider range)
+        upper_green = np.array([80, 255, 255])  # Upper bound for green
+        
+        # Create mask for green pixels
+        green_mask = cv2.inRange(hsv, lower_green, upper_green)
+        
+        # Apply morphological operations to remove small green artifacts
+        kernel = np.ones((3, 3), np.uint8)
+        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_CLOSE, kernel)
+        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel)
+        
+        # Apply mask: set green pixels to white (background color)
+        # This removes green artifacts while preserving text
+        result = image.copy()
+        result[green_mask > 0] = [255, 255, 255]  # Replace green with white
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
     else:
         gray = image.copy()
 
@@ -35,8 +59,13 @@ def preprocess_image_for_ocr(image: cv2.Mat) -> cv2.Mat:
 
     # Optional: denoise
     denoised = cv2.fastNlMeansDenoising(thresh, None, 10, 7, 21)
-
-    return denoised
+    
+    # Additional morphological operations to remove small artifacts
+    # Remove small noise while preserving text
+    kernel = np.ones((2, 2), np.uint8)
+    cleaned = cv2.morphologyEx(denoised, cv2.MORPH_CLOSE, kernel, iterations=1)
+    
+    return cleaned
 
 
 def extract_text_from_roi(roi_image: cv2.Mat) -> str:
